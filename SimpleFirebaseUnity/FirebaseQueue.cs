@@ -30,11 +30,11 @@ Copyright (c) 2016  M Dikra Prasetya
 
 */
 
+using Newtonsoft.Json;
 using System;
 
 namespace SimpleFirebaseUnity
 {
-	using MiniJSON;
 
 	public class FirebaseQueue {
 
@@ -274,7 +274,7 @@ namespace SimpleFirebaseUnity
 			if (!isJson)
 				AddQueue (temp, FirebaseCommand.Set, param, json);
 			else
-				AddQueue (temp, FirebaseCommand.Set, param, Json.Deserialize(json));
+				AddQueue (temp, FirebaseCommand.Set, param, JsonConvert.DeserializeObject(json, Firebase.DefaultSerializerSettings));
 		}
 
 		/// <summary>
@@ -292,7 +292,7 @@ namespace SimpleFirebaseUnity
 			if (!isJson)
 				AddQueue (temp, FirebaseCommand.Set, param.Parameter, json);
 			else
-				AddQueue (temp, FirebaseCommand.Set, param.Parameter, Json.Deserialize(json));
+				AddQueue (temp, FirebaseCommand.Set, param.Parameter, JsonConvert.DeserializeObject(json, Firebase.DefaultSerializerSettings));
 		}
 
 		/// <summary>
@@ -337,7 +337,7 @@ namespace SimpleFirebaseUnity
 			if (!isJson)
 				AddQueue (temp, FirebaseCommand.Update, param, json);
 			else
-				AddQueue (temp, FirebaseCommand.Update, param, Json.Deserialize(json));
+				AddQueue (temp, FirebaseCommand.Update, param, JsonConvert.DeserializeObject(json, Firebase.DefaultSerializerSettings));
 		}
 
 		/// <summary>
@@ -355,7 +355,7 @@ namespace SimpleFirebaseUnity
 			if (!isJson)
 				AddQueue (temp, FirebaseCommand.Update, param.Parameter, json);
 			else
-				AddQueue (temp, FirebaseCommand.Update, param.Parameter, Json.Deserialize(json));
+				AddQueue (temp, FirebaseCommand.Update, param.Parameter, JsonConvert.DeserializeObject(json, Firebase.DefaultSerializerSettings));
 		}
 
 		/// <summary>
@@ -401,7 +401,7 @@ namespace SimpleFirebaseUnity
 			if (!isJson)
 				AddQueue (temp, FirebaseCommand.Push, param, json);
 			else
-				AddQueue (temp, FirebaseCommand.Push, param, Json.Deserialize(json));
+				AddQueue (temp, FirebaseCommand.Push, param, JsonConvert.DeserializeObject(json, Firebase.DefaultSerializerSettings));
 		}
 
 		/// <summary>
@@ -419,7 +419,7 @@ namespace SimpleFirebaseUnity
 			if (!isJson)
 				AddQueue (temp, FirebaseCommand.Push, param.Parameter, json);
 			else
-				AddQueue (temp, FirebaseCommand.Push, param.Parameter, Json.Deserialize(json));
+				AddQueue (temp, FirebaseCommand.Push, param.Parameter, JsonConvert.DeserializeObject(json, Firebase.DefaultSerializerSettings));
 		}
 
 		/// <summary>

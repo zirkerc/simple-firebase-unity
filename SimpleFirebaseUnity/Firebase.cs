@@ -36,13 +36,16 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using System.Net;
+using Newtonsoft.Json;
+using System.IO;
+using System.Threading.Tasks;
 
 namespace SimpleFirebaseUnity
 {
-    using MiniJSON;
     [Serializable]
     public class Firebase
     {
+        public static JsonSerializerSettings DefaultSerializerSettings = new JsonSerializerSettings() { };
         const string SERVER_VALUE_TIMESTAMP = "{\".sv\": \"timestamp\"}";
 
         public Action<Firebase, DataSnapshot> OnGetSuccess;
@@ -288,9 +291,9 @@ namespace SimpleFirebaseUnity
         /// </summary>
         /// <param name="query">REST call parameters wrapped in FirebaseQuery class</param>
         /// <returns></returns>
-        public void GetValue(FirebaseParam query)
+        public async Task <DataSnapshot> GetValue(FirebaseParam query)
         {
-            GetValue(query.Parameter);
+            return await GetValue(query.Parameter);
         }
 
         /// <summary>
@@ -300,32 +303,60 @@ namespace SimpleFirebaseUnity
         /// </summary>
         /// <param name="param">REST call parameters on a string. Example: &quot;orderBy=&#92;"$key&#92;"&quot;print=pretty&quot;shallow=true"></param>
         /// <returns></returns>
-        public void GetValue(string param = "")
+        public async Task<DataSnapshot> GetValue(string param = "")
         {
-            try
+
+            if (Credential != "")
             {
-                if (Credential != "")
+                param = (new FirebaseParam(param).Auth(Credential)).Parameter;
+            }
+
+            string url = Endpoint;
+
+            param = WWW.EscapeURL(param);
+
+            if (param != "")
+                url += "?" + param;
+
+            var request = (HttpWebRequest)WebRequest.Create(url);
+            var response = await request.GetResponseAsync();
+
+
+            //return request.GetResponseAsync().ContinueWith(response =>
+            //{
+                string json = "";
+                using (Stream stream = response.GetResponseStream())
+                using (StreamReader reader = new StreamReader(stream))
                 {
-                    param = (new FirebaseParam(param).Auth(Credential)).Parameter;
+                    json = reader.ReadToEnd();
                 }
+                return new DataSnapshot(json);
+            //});
 
-                string url = Endpoint;
+            //try
+            //{
+            //    if (Credential != "")
+            //    {
+            //        param = (new FirebaseParam(param).Auth(Credential)).Parameter;
+            //    }
 
-                param = WWW.EscapeURL(param);
+            //    string url = Endpoint;
 
-                if (param != "")
-                    url += "?" + param;
+            //    param = WWW.EscapeURL(param);
 
-                root.StartCoroutine(RequestCoroutine(url, null, null, OnGetSuccess, OnGetFailed));
-            }
-            catch (WebException webEx)
-            {
-                if (OnGetFailed != null) OnGetFailed(this, FirebaseError.Create(webEx));
-            }
-            catch (Exception ex)
-            {
-                if (OnGetFailed != null) OnGetFailed(this, new FirebaseError(ex.Message));
-            }
+            //    if (param != "")
+            //        url += "?" + param;
+
+            //    root.StartCoroutine(RequestCoroutine(url, null, null, OnGetSuccess, OnGetFailed));
+            //}
+            //catch (WebException webEx)
+            //{
+            //    if (OnGetFailed != null) OnGetFailed(this, FirebaseError.Create(webEx));
+            //}
+            //catch (Exception ex)
+            //{
+            //    if (OnGetFailed != null) OnGetFailed(this, new FirebaseError(ex.Message));
+            //}
 
         }
 
@@ -338,12 +369,12 @@ namespace SimpleFirebaseUnity
         /// <param name="isJson">True if string is json (necessary to differentiate with the other overloading)</param>
         /// <param name="param">REST call parameters on a string. Example: "auth=ASDF123"</param>
         /// <returns></returns>
-        public void SetValue(string json, bool isJson, string param = "")
+        public async Task<DataSnapshot> SetValue(string json, bool isJson, string param = "")
         {
             if (!isJson)
-                SetValue(json, param);
+                return await SetValue(json, param);
             else
-                SetValue(Json.Deserialize(json), param);
+                return await SetValue(JsonConvert.DeserializeObject(json, Firebase.DefaultSerializerSettings), param);
         }
 
         /// <summary>
@@ -354,7 +385,7 @@ namespace SimpleFirebaseUnity
         /// <param name="_val">Set value</param>
         /// <param name="param">REST call parameters on a string. Example: "auth=ASDF123"</param>
         /// <returns></returns>
-        public void SetValue(object _val, string param = "")
+        public async Task<DataSnapshot> SetValue(object _val, string param = "")
         {
             try
             {
@@ -370,22 +401,44 @@ namespace SimpleFirebaseUnity
                 if (param != string.Empty)
                     url += "?" + param;
 
-                Dictionary<string, string> headers = new Dictionary<string, string>();
-                headers.Add("Content-Type", "application/json");
-                headers.Add("X-HTTP-Method-Override", "PUT");
+                //Dictionary<string, string> headers = new Dictionary<string, string>();
+                //headers.Add("Content-Type", "application/json");
+                //headers.Add("X-HTTP-Method-Override", "PUT");
+                               
+                byte[] bytes = Encoding.GetEncoding("iso-8859-1").GetBytes(JsonConvert.SerializeObject(_val, Firebase.DefaultSerializerSettings));
 
-                //UTF8Encoding encoding = new UTF8Encoding();
-                byte[] bytes = Encoding.GetEncoding("iso-8859-1").GetBytes(Json.Serialize(_val));
+                var request = (HttpWebRequest)WebRequest.Create(url);
+                request.Method = "PUT";
+                request.ContentType = "application/json";
+                request.ContentLength = bytes.Length;
+                //request.Headers.Add("X-HTTP-Method-Override", "PUT");
 
-                root.StartCoroutine(RequestCoroutine(url, bytes, headers, OnSetSuccess, OnSetFailed));
+                using (Stream dataStream = request.GetRequestStream())
+                {
+                    dataStream.Write(bytes, 0, bytes.Length);
+                }
+
+                var response = await request.GetResponseAsync();
+                string json = "";
+                using (Stream stream = response.GetResponseStream())
+                using (StreamReader reader = new StreamReader(stream))
+                {
+                    json = reader.ReadToEnd();
+                }
+
+                return new DataSnapshot(json);
+
+                //root.StartCoroutine(RequestCoroutine(url, bytes, headers, OnSetSuccess, OnSetFailed));
             }
             catch (WebException webEx)
             {
                 if (OnSetFailed != null) OnSetFailed(this, FirebaseError.Create(webEx));
+                throw FirebaseError.Create(webEx);
             }
             catch (Exception ex)
             {
                 if (OnSetFailed != null) OnSetFailed(this, new FirebaseError(ex.Message));
+                throw new FirebaseError(ex.Message);
             }
 
         }
@@ -399,12 +452,12 @@ namespace SimpleFirebaseUnity
         /// <param name="isJson">True if string is json (necessary to differentiate the other overloading)</param>
         /// <param name="query">REST call parameters wrapped in FirebaseQuery class</param>
         /// <returns></returns>
-        public void SetValue(string json, bool isJson, FirebaseParam query)
+        public async Task<DataSnapshot> SetValue(string json, bool isJson, FirebaseParam query)
         {
             if (!isJson)
-                SetValue(json, query.Parameter);
+                return await SetValue(json, query.Parameter);
             else
-                SetValue(Json.Deserialize(json), query.Parameter);
+                return await SetValue(JsonConvert.DeserializeObject(json, Firebase.DefaultSerializerSettings), query.Parameter);
         }
 
         /// <summary>
@@ -415,9 +468,9 @@ namespace SimpleFirebaseUnity
         /// <param name="_val">Update value</param>
         /// <param name="query">REST call parameters wrapped in FirebaseQuery class</param>
         /// <returns></returns>
-        public void SetValue(object _val, FirebaseParam query)
+        public async Task<DataSnapshot> SetValue(object _val, FirebaseParam query)
         {
-            SetValue(_val, query.Parameter);
+            return await SetValue(_val, query.Parameter);
         }
 
 
@@ -430,10 +483,11 @@ namespace SimpleFirebaseUnity
         /// <param name="_val">Set value</param>
         /// <param name="param">REST call parameters on a string. Example: "auth=ASDF123"</param>
         /// <returns></returns>
-        public void UpdateValue(object _val, string param = "")
+        public async Task<DataSnapshot> UpdateValue(object _val, string param = "")
         {
             try
             {
+                /*
                 if (!(_val is Dictionary<string, object>))
                 {
                     if (OnUpdateFailed != null)
@@ -441,7 +495,7 @@ namespace SimpleFirebaseUnity
 
                     return;
                 }
-
+                */
                 if (Credential != "")
                 {
                     param = (new FirebaseParam(param).Auth(Credential)).Parameter;
@@ -454,22 +508,43 @@ namespace SimpleFirebaseUnity
                 if (param != string.Empty)
                     url += "?" + param;
 
-                Dictionary<string, string> headers = new Dictionary<string, string>();
-                headers.Add("Content-Type", "application/json");
-                headers.Add("X-HTTP-Method-Override", "PATCH");
+                //Dictionary<string, string> headers = new Dictionary<string, string>();
+                //headers.Add("Content-Type", "application/json");
+                //headers.Add("X-HTTP-Method-Override", "PATCH");
+                
+                byte[] bytes = Encoding.GetEncoding("iso-8859-1").GetBytes(JsonConvert.SerializeObject(_val, Firebase.DefaultSerializerSettings));
 
-                //UTF8Encoding encoding = new UTF8Encoding();
-                byte[] bytes = Encoding.GetEncoding("iso-8859-1").GetBytes(Json.Serialize(_val));
+                var request = (HttpWebRequest)WebRequest.Create(url);
+                request.Method = "PATCH";
+                request.ContentType = "application/json";
+                request.ContentLength = bytes.Length;
+                //request.Headers.Add("X-HTTP-Method-Override", "PATCH");
+                using (Stream dataStream = request.GetRequestStream())
+                {
+                    dataStream.Write(bytes, 0, bytes.Length);
+                }
 
-                root.StartCoroutine(RequestCoroutine(url, bytes, headers, OnUpdateSuccess, OnUpdateFailed));
+                var response = await request.GetResponseAsync();
+                string json = "";
+                using (Stream stream = response.GetResponseStream())
+                using (StreamReader reader = new StreamReader(stream))
+                {
+                    json = reader.ReadToEnd();
+                }
+
+                return new DataSnapshot(json);
+
+                //root.StartCoroutine(RequestCoroutine(url, bytes, headers, OnUpdateSuccess, OnUpdateFailed));
             }
             catch (WebException webEx)
             {
                 if (OnUpdateFailed != null) OnUpdateFailed(this, FirebaseError.Create(webEx));
+                throw FirebaseError.Create(webEx);
             }
             catch (Exception ex)
             {
                 if (OnUpdateFailed != null) OnUpdateFailed(this, new FirebaseError(ex.Message));
+                throw new FirebaseError(ex.Message);
             }
 
         }
@@ -483,12 +558,12 @@ namespace SimpleFirebaseUnity
         /// <param name="isJson">True if string is json (necessary to differentiate the other overloading)</param>
         /// <param name="query">REST call parameters wrapped in FirebaseQuery class</param>
         /// <returns></returns>
-        public void UpdateValue(string json, bool isJson, FirebaseParam query)
-        {
+        public async Task<DataSnapshot> UpdateValue(string json, bool isJson, FirebaseParam query)
+        { 
             if (!isJson)
-                UpdateValue(json, query.Parameter);
+                return await UpdateValue(json, query.Parameter);
             else
-                UpdateValue(Json.Deserialize(json), query.Parameter);
+                return await UpdateValue(JsonConvert.DeserializeObject(json, Firebase.DefaultSerializerSettings), query.Parameter);
         }
 
         /// <summary>
@@ -499,9 +574,9 @@ namespace SimpleFirebaseUnity
         /// <param name="_val">Update value</param>
         /// <param name="query">REST call parameters wrapped in FirebaseQuery class</param>
         /// <returns></returns>
-        public void UpdateValue(object _val, FirebaseParam query)
+        public async Task<DataSnapshot> UpdateValue(object _val, FirebaseParam query)
         {
-            UpdateValue(_val, query.Parameter);
+            return await UpdateValue(_val, query.Parameter);
         }
 
         /// <summary>
@@ -513,12 +588,12 @@ namespace SimpleFirebaseUnity
         /// <param name="isJson">True if string is json (necessary to differentiate with the other overloading)</param>
         /// <param name="param">REST call parameters on a string. Example: "auth=ASDF123"</param>
         /// <returns></returns>
-        public void Push(string json, bool isJson, string param = "")
+        public async Task<DataSnapshot> Push(string json, bool isJson, string param = "")
         {
             if (!isJson)
-                Push(json, param);
+                return await Push(json, param);
             else
-                Push(Json.Deserialize(json), param);
+                return await Push(JsonConvert.DeserializeObject(json, Firebase.DefaultSerializerSettings), param);
         }
 
         /// <summary>
@@ -529,7 +604,7 @@ namespace SimpleFirebaseUnity
         /// <param name="_val">New value</param>
         /// <param name="param">REST call parameters on a string. Example: "auth=ASDF123"</param>
         /// <returns></returns>
-        public void Push(object _val, string param = "")
+        public async Task<DataSnapshot> Push(object _val, string param = "")
         {
             try
             {
@@ -547,17 +622,37 @@ namespace SimpleFirebaseUnity
 
 
                 //UTF8Encoding encoding = new UTF8Encoding();
-                byte[] bytes = Encoding.GetEncoding("iso-8859-1").GetBytes(Json.Serialize(_val));
+                byte[] bytes = Encoding.GetEncoding("iso-8859-1").GetBytes(JsonConvert.SerializeObject(_val, Firebase.DefaultSerializerSettings));
+                var request = (HttpWebRequest)WebRequest.Create(url);
+                request.Method = "POST";
+                request.ContentType = "application/json";
+                request.ContentLength = bytes.Length;
+                //request.Headers.Add("X-HTTP-Method-Override", "POST");
+                using (Stream dataStream = request.GetRequestStream())
+                {
+                    dataStream.Write(bytes, 0, bytes.Length);
+                }
 
-                root.StartCoroutine(RequestCoroutine(url, bytes, null, OnPushSuccess, OnPushFailed));
+                var response = await request.GetResponseAsync();
+                string json = "";
+                using (Stream stream = response.GetResponseStream())
+                using (StreamReader reader = new StreamReader(stream))
+                {
+                    json = reader.ReadToEnd();
+                }
+
+                return new DataSnapshot(json);
+                //root.StartCoroutine(RequestCoroutine(url, bytes, null, OnPushSuccess, OnPushFailed));
             }
             catch (WebException webEx)
             {
                 if (OnPushFailed != null) OnPushFailed(this, FirebaseError.Create(webEx));
+                throw FirebaseError.Create(webEx);
             }
             catch (Exception ex)
             {
                 if (OnPushFailed != null) OnPushFailed(this, new FirebaseError(ex.Message));
+                throw new FirebaseError(ex.Message);
             }
         }
 
@@ -570,12 +665,12 @@ namespace SimpleFirebaseUnity
         /// <param name="isJson">True if string is json (necessary to differentiate with the other overloading)</param>
         /// <param name="param">REST call parameters on a string. Example: "auth=ASDF123"</param>
         /// <returns></returns>
-        public void Push(string json, bool isJson, FirebaseParam query)
+        public async Task<DataSnapshot> Push(string json, bool isJson, FirebaseParam query)
         {
             if (!isJson)
-                Push(json, query.Parameter);
+                return await Push(json, query.Parameter);
             else
-                Push(Json.Deserialize(json), query.Parameter);
+                return await Push(JsonConvert.DeserializeObject(json, Firebase.DefaultSerializerSettings), query.Parameter);
         }
 
         /// <summary>
@@ -586,9 +681,9 @@ namespace SimpleFirebaseUnity
         /// <param name="_val">New value</param>
         /// <param name="query">REST call parameters wrapped in FirebaseQuery class</param>
         /// <returns></returns>
-        public void Push(object _val, FirebaseParam query)
+        public async Task<DataSnapshot> Push(object _val, FirebaseParam query)
         {
-            Push(_val, query.Parameter);
+            return await Push(_val, query.Parameter);
         }
 
         /// <summary>
@@ -598,7 +693,7 @@ namespace SimpleFirebaseUnity
         /// </summary>
         /// <param name="param">REST call parameters on a string. Example: "auth=ASDF123"</param>
         /// <returns></returns>
-        public void Delete(string param = "")
+        public async Task<DataSnapshot> Delete(string param = "")
         {
             try
             {
@@ -613,24 +708,41 @@ namespace SimpleFirebaseUnity
 
                 if (param != string.Empty)
                     url += "?" + param;
+                
+                //byte[] bytes = Encoding.GetEncoding("iso-8859-1").GetBytes("{ \"dummy\" : \"dummies\"}");
 
-                Dictionary<string, string> headers = new Dictionary<string, string>();
-                headers.Add("Content-Type", "application/json");
-                headers.Add("X-HTTP-Method-Override", "DELETE");
+                var request = (HttpWebRequest)WebRequest.Create(url);
+                request.Method = "DELETE";
+                //request.ContentType = "application/json";
+                //request.ContentLength = bytes.Length;
+                //request.Headers.Add("X-HTTP-Method-Override", "PATCH");
+                //using (Stream dataStream = request.GetRequestStream())
+                //{
+                //    dataStream.Write(bytes, 0, bytes.Length);
+                //}
 
-                //UTF8Encoding encoding = new UTF8Encoding();
-                byte[] bytes = Encoding.GetEncoding("iso-8859-1").GetBytes("{ \"dummy\" : \"dummies\"}");
+                var response = await request.GetResponseAsync();
+                string json = "";
+                using (Stream stream = response.GetResponseStream())
+                using (StreamReader reader = new StreamReader(stream))
+                {
+                    json = reader.ReadToEnd();
+                }
 
-                root.StartCoroutine(RequestCoroutine(url, bytes, headers, OnDeleteSuccess, OnDeleteFailed));
+                return new DataSnapshot(json);
+
+                //root.StartCoroutine(RequestCoroutine(url, bytes, headers, OnDeleteSuccess, OnDeleteFailed));
 
             }
             catch (WebException webEx)
             {
                 if (OnDeleteFailed != null) OnDeleteFailed(this, FirebaseError.Create(webEx));
+                throw FirebaseError.Create(webEx);
             }
             catch (Exception ex)
             {
                 if (OnDeleteFailed != null) OnDeleteFailed(this, new FirebaseError(ex.Message));
+                throw new FirebaseError(ex.Message);
             }
         }
 
@@ -641,9 +753,9 @@ namespace SimpleFirebaseUnity
         /// </summary>
         /// <param name="query">REST call parameters wrapped in FirebaseQuery class</param>
         /// <returns></returns>
-        public void Delete(FirebaseParam query)
+        public async Task<DataSnapshot> Delete(FirebaseParam query)
         {
-            Delete(query.Parameter);
+            return await Delete(query.Parameter);
         }
 
 
@@ -651,9 +763,9 @@ namespace SimpleFirebaseUnity
         /// Sets the time stamp with the time since UNIX epoch by server value (in milliseconds).
         /// </summary>
         /// <param name="keyName">Key name.</param>
-        public void SetTimeStamp(string keyName)
+        public async Task<DataSnapshot> SetTimeStamp(string keyName)
         {
-            Child(keyName).SetValue(SERVER_VALUE_TIMESTAMP, true);
+            return await Child(keyName).SetValue(SERVER_VALUE_TIMESTAMP, true);
         }
 
         /// <summary>
@@ -662,13 +774,13 @@ namespace SimpleFirebaseUnity
         /// <param name="keyName">Key name.</param>
         /// <param name="OnSuccess">On success callback.</param>
         /// <param name="OnFailed">On fail callback.</param>
-        public void SetTimeStamp(string keyName, Action<Firebase, DataSnapshot> OnSuccess, Action<Firebase, FirebaseError> OnFailed)
+        public async Task<DataSnapshot> SetTimeStamp(string keyName, Action<Firebase, DataSnapshot> OnSuccess, Action<Firebase, FirebaseError> OnFailed)
         {
             Firebase temp = Child(keyName);
             temp.OnSetSuccess += OnSuccess;
             temp.OnSetFailed += OnFailed;
 
-            temp.SetValue(SERVER_VALUE_TIMESTAMP, true);
+            return await temp.SetValue(SERVER_VALUE_TIMESTAMP, true);
         }
 
 
@@ -763,7 +875,7 @@ namespace SimpleFirebaseUnity
         /// <param name="secret">Firebase Secret.</param>
         public void SetRules(Dictionary<string, object> rules, Action<Firebase, DataSnapshot> OnSuccess, Action<Firebase, FirebaseError> OnFailed, string secret = "")
         {
-            SetRules(Json.Serialize(rules), OnSuccess, OnFailed, secret);
+            SetRules(JsonConvert.SerializeObject(rules, Firebase.DefaultSerializerSettings), OnSuccess, OnFailed, secret);
         }
 
         /// <summary>
@@ -773,7 +885,7 @@ namespace SimpleFirebaseUnity
         /// <param name="secret">Firebase Secret.</param>
         public void SetRules(Dictionary<string, object> rules, string secret = "")
         {
-            SetRules(Json.Serialize(rules), null, null, secret);
+            SetRules(JsonConvert.SerializeObject(rules, Firebase.DefaultSerializerSettings), null, null, secret);
         }
 
         #endregion
@@ -815,7 +927,7 @@ namespace SimpleFirebaseUnity
                         {
                             if (!string.IsNullOrEmpty(www.text))
                             {
-                                Dictionary<string, object> obj = Json.Deserialize(www.text) as Dictionary<string, object>;
+                                Dictionary<string, object> obj = JsonConvert.DeserializeObject(www.text, Firebase.DefaultSerializerSettings) as Dictionary<string, object>;
 
                                 if (obj != null && obj.ContainsKey("error"))
                                     errMessage = obj["error"] as string;

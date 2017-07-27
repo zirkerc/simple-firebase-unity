@@ -30,12 +30,12 @@ Copyright (c) 2016  M Dikra Prasetya
 
 */
 
+using Newtonsoft.Json;
 using System.Collections.Generic;
 using System.Security;
 
 namespace SimpleFirebaseUnity
 {
-	using MiniJSON;
 
     public class DataSnapshot
     {
@@ -43,6 +43,7 @@ namespace SimpleFirebaseUnity
         protected Dictionary<string, object> val_dict;
         protected List<string> keys;
         protected string json;
+        private bool typed = false;
 
         protected DataSnapshot()
         {
@@ -58,7 +59,7 @@ namespace SimpleFirebaseUnity
         /// <param name="json">Json string</param>
         public DataSnapshot(string _json = "")
         {
-			object obj = (_json != null && _json.Length > 0)?Json.Deserialize(_json):null;
+			object obj = (_json != null && _json.Length > 0)?JsonConvert.DeserializeObject(_json, Firebase.DefaultSerializerSettings):null;
 
             if (obj is Dictionary<string, object>)
                 val_dict = obj as Dictionary<string, object>;
@@ -127,8 +128,14 @@ namespace SimpleFirebaseUnity
         {
 			try
 			{
-				if (val_obj != null)
+				if (val_obj != null && typed)
 					return (T)val_obj;
+                else if (json != null)
+                {
+                    val_obj = JsonConvert.DeserializeObject<T>(json, Firebase.DefaultSerializerSettings);
+                    typed = true;
+                    return (T)val_obj;
+                }
 				object obj = val_dict;
 				return (T)obj;
 			}

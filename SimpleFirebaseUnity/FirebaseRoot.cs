@@ -34,7 +34,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Net.Security;
 using System.Net;
 using System.Collections;
-
+using System.Threading.Tasks;
 namespace SimpleFirebaseUnity
 {
     internal class FirebaseRoot : Firebase
